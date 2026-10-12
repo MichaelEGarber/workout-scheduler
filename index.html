@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14251f">
+  <meta name="description" content="A private, personal workout planner and log.">
+  <title>Stride — Workout planner</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="Stride home">
+        <span class="brand-mark" aria-hidden="true">↗</span>
+        <span>stride<span class="brand-dot">.</span></span>
+      </a>
+      <button class="icon-button" id="backupButton" aria-label="Backup and restore" title="Backup and restore">↥</button>
+    </header>
+
+    <main id="top">
+      <section class="intro">
+        <p class="eyebrow" id="todayLabel"></p>
+        <h1>Your week,<br><span>at your pace.</span></h1>
+        <p class="intro-copy">A simple place to plan, show up, and remember what worked.</p>
+      </section>
+
+      <section class="week-panel" aria-labelledby="weekHeading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">YOUR PLAN</p>
+            <h2 id="weekHeading">This week</h2>
+          </div>
+          <div class="week-controls">
+            <button class="icon-button small" id="previousWeek" aria-label="Previous week">‹</button>
+            <button class="icon-button small" id="nextWeek" aria-label="Next week">›</button>
+          </div>
+        </div>
+        <div class="week-strip" id="weekStrip" aria-label="Choose a day"></div>
+        <div id="dayPlan" class="day-plan"></div>
+      </section>
+
+      <section class="quick-stats" id="weeklySummary" aria-label="Weekly progress"></section>
+
+      <section class="library-section" aria-labelledby="libraryHeading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">YOUR GYM</p>
+            <h2 id="libraryHeading">Machine list</h2>
+          </div>
+          <button class="text-button" id="addMachineButton">＋ Add machine</button>
+        </div>
+        <p class="section-copy">Save each machine once. Its last settings will be ready when you use it again.</p>
+        <div id="machineList" class="machine-list"></div>
+      </section>
+
+      <section class="settings-note">
+        <span class="privacy-icon" aria-hidden="true">◈</span>
+        <p>Your workout log is saved in this browser on this iPhone. Use <strong>Backup</strong> to export a copy.</p>
+      </section>
+    </main>
+    <footer>Made for your own miles, minutes, and milestones.</footer>
+  </div>
+
+  <dialog id="logDialog" class="modal">
+    <form method="dialog" class="modal-card" id="logForm">
+      <button class="close-button" value="cancel" aria-label="Close">×</button>
+      <p class="eyebrow" id="logDateLabel"></p>
+      <h2 id="logTitle">Log workout</h2>
+      <div id="logFields" class="form-fields"></div>
+      <div class="modal-actions">
+        <button class="button secondary" value="cancel">Cancel</button>
+        <button class="button primary" id="saveLogButton" value="save">Save workout</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="machineDialog" class="modal">
+    <form method="dialog" class="modal-card" id="machineForm">
+      <button class="close-button" value="cancel" aria-label="Close">×</button>
+      <p class="eyebrow">YOUR GYM LIBRARY</p>
+      <h2 id="machineDialogTitle">Add a machine</h2>
+      <label>Machine or exercise name<input name="name" required maxlength="80" placeholder="e.g. Seated row"></label>
+      <label>Starting settings <span class="label-hint">(optional)</span><textarea name="settings" rows="3" placeholder="Seat position, starting weight, program…"></textarea></label>
+      <div class="modal-actions">
+        <button class="button secondary" value="cancel">Cancel</button>
+        <button class="button primary" id="saveMachineButton" value="save">Save machine</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="backupDialog" class="modal">
+    <form method="dialog" class="modal-card">
+      <button class="close-button" value="cancel" aria-label="Close">×</button>
+      <p class="eyebrow">YOUR DATA</p>
+      <h2>Backup & restore</h2>
+      <p class="section-copy">Your log lives in this browser. Download a backup file now and then, especially before changing phones or clearing browser data.</p>
+      <div class="backup-actions">
+        <button class="button primary" id="exportButton" type="button">Download backup</button>
+        <label class="button secondary import-button">Restore from backup<input type="file" id="importInput" accept="application/json,.json"></label>
+      </div>
+      <p class="fine-print">Restoring replaces the workout data currently in this browser.</p>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="./app.js" defer></script>
+</body>
+</html>

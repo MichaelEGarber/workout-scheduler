@@ -1,0 +1,13 @@
+{
+  "name": "Stride — Workout planner",
+  "short_name": "Stride",
+  "description": "A personal workout planner and log.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f4ee",
+  "theme_color": "#14251f",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
