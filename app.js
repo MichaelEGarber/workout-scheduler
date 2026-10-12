@@ -10,6 +10,15 @@ const ACTIVITY_TEMPLATES = [
   { id: 'group-walk', day: 6, title: 'Group walk', type: 'walk', detail: 'Saturday morning · fixed', icon: '⌁' },
   { id: 'ride-distance', day: 0, title: 'Cycling · distance ride', type: 'cycling', detail: 'Steady, comfortable pace', icon: '↗' }
 ];
+const STARTER_EXERCISES = [
+  { id: 'leg-press', name: 'Leg press', muscles: 'Legs · quadriceps · glutes', tip: 'Use a comfortable range of motion without locking your knees.' },
+  { id: 'leg-curl', name: 'Seated leg curl', muscles: 'Hamstrings · back of thighs', tip: 'Trains the muscles at the back of your thighs.' },
+  { id: 'chest-press', name: 'Chest press', muscles: 'Chest · triceps · front shoulders', tip: 'Keep your back against the pad and use a comfortable range.' },
+  { id: 'lat-pulldown', name: 'Lat pulldown', muscles: 'Back · lats · biceps', tip: 'Pull toward your upper chest without swinging your body.' },
+  { id: 'seated-row', name: 'Seated row', muscles: 'Mid-back · rear shoulders · biceps', tip: 'Keep your torso steady.' },
+  { id: 'shoulder-press', name: 'Shoulder press', muscles: 'Shoulders · triceps', tip: 'Optional initially. Use only if it feels comfortable and is appropriate for you.', optional: true },
+  { id: 'ab-crunch', name: 'Abdominal crunch machine', muscles: 'Core · abdominal muscles', tip: 'Use light resistance and controlled movement; don’t pull on your neck.' }
+];
 
 let state = loadState();
 let selectedDate = startOfDay(new Date());
@@ -97,7 +106,7 @@ function renderDayPlan() {
     html += activities.map((activity) => {
       const log = getLog(selectedDate, activity.id);
       const buttonText = log?.completed ? 'Edit log' : activity.type === 'gym' ? 'Start' : 'Log';
-      const extra = log?.completed ? (activity.type === 'gym' ? `${(log.machines || []).length} machine${(log.machines || []).length === 1 ? '' : 's'} logged` : logSummary(log)) : activity.detail;
+      const extra = log?.completed ? (activity.type === 'gym' ? ((log.machines || []).length ? `${log.machines.length} machine${log.machines.length === 1 ? '' : 's'} logged` : 'Workout marked done') : logSummary(log)) : activity.detail;
       return `<article class="activity-card">
         <div class="activity-symbol" aria-hidden="true">${activity.icon}</div>
         <div class="activity-body"><div class="activity-title-row"><span class="activity-title">${escapeHtml(activity.title)}</span></div>
@@ -171,6 +180,13 @@ function gymFields(existing) {
   const cards = oldMachines.map((item) => machineLogCard(item.machineId, item)).join('');
   const options = state.machines.map((item) => `<option value="${attr(item.id)}">${escapeHtml(item.name)}</option>`).join('');
   return `<p class="section-copy">Pick any machine that’s free. Your previous settings appear as a reminder; change them for today’s session.</p>
+    <div class="visit-checklist"><div class="visit-checklist-heading"><strong>Starting exercise list</strong><span>Check off as you go</span></div>
+      <p class="visit-checklist-note">These checkmarks are just for this visit and won’t be saved.</p>
+      <div class="visit-exercises">${STARTER_EXERCISES.map((exercise) => `<label class="visit-exercise" for="visit-${exercise.id}">
+        <input id="visit-${exercise.id}" name="visitChecklist" type="checkbox" value="${exercise.id}">
+        <span class="visit-exercise-copy"><span class="visit-exercise-title">${escapeHtml(exercise.name)}${exercise.optional ? '<em>Optional</em>' : ''}</span><span class="visit-exercise-muscles">${escapeHtml(exercise.muscles)}</span><span class="visit-exercise-tip">${escapeHtml(exercise.tip)}</span></span>
+      </label>`).join('')}</div>
+    </div>
     <div id="machineLogCards">${cards}</div>
     ${state.machines.length ? `<label>Add a machine<select id="machinePicker"><option value="">Choose from your list…</option>${options}</select></label>` : '<div class="empty-library">Add machines to your library when you start using them. You can come back and log this workout any time.</div>'}
     <label>Workout notes <span class="label-hint">(optional)</span><textarea name="notes" rows="2" placeholder="How the session felt">${escapeHtml(existing.notes || '')}</textarea></label>`;
@@ -237,7 +253,16 @@ function saveLog(event) {
         notes: card.querySelector('[data-field="notes"]').value.trim()
       };
     });
-    if (!log.machines.length && !log.notes) { showToast('Add a machine or a note before saving.'); return; }
+    const checkedThisVisit = formData.getAll('visitChecklist').length > 0;
+    if (!log.machines.length && !log.notes) {
+      if (checkedThisVisit) {
+        $('#logDialog').close();
+        render();
+        showToast('Checkmarks cleared. Nothing was saved.');
+        return;
+      }
+      showToast('Check an exercise, add a machine, or add a note before saving.'); return;
+    }
   } else {
     log.duration = String(formData.get('duration') || '').trim();
     if (activeLog.activity.type === 'cycling') log.distance = String(formData.get('distance') || '').trim();
@@ -322,3 +347,5 @@ render();
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch((error) => console.warn('Offline caching is unavailable.', error)));
 }
+
+

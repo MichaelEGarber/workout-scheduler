@@ -6,6 +6,7 @@ A small, mobile-friendly workout planner designed for one person. It is a static
 
 - Weekly schedule: Monday whole-body gym, Tuesday and Friday cycling intervals, Wednesday hike every other week, Saturday morning group walk, and Sunday steady distance ride.
 - A day can be selected and logged independently, so the gym machine order stays flexible.
+- A temporary seven-exercise gym checklist; checkmarks clear when the visit ends and are not saved.
 - A personal machine list with saved settings and previous weight, sets, and reps shown when logging again.
 - Cycling duration, distance, interval or route notes, and general session notes.
 - JSON backup download and restore.
@@ -28,3 +29,5 @@ Open the Pages address in Chrome on the iPhone. Use Chrome's Share menu and choo
 ## Local development
 
 Open the repository folder in VS Code. For a quick preview, use a local web server extension such as Live Server, or publish through GitHub Pages and open the published address. Browser storage used on a computer is separate from storage on the iPhone.
+
+
