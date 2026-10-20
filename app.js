@@ -1,23 +1,21 @@
 const STORAGE_KEY = 'stride-workout-data-v1';
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const ACTIVITY_TEMPLATES = [
-  { id: 'gym-a', day: 1, title: 'Whole-body gym', type: 'gym', detail: 'Choose machines in any order', icon: '◉' },
-  { id: 'ride-speed-a', day: 2, title: 'Cycling · speed intervals', type: 'cycling', detail: 'Short efforts with easy recovery', icon: '↗' },
-  { id: 'hike', day: 3, title: 'Hike', type: 'hike', detail: 'Every other Wednesday', icon: '⌁', alternate: true },
-  { id: 'gym-b', day: 4, title: 'Whole-body gym', type: 'gym', detail: 'Choose machines in any order', icon: '◉' },
-  { id: 'ride-speed-b', day: 5, title: 'Cycling · speed intervals', type: 'cycling', detail: 'Short efforts with easy recovery', icon: '↗' },
-  { id: 'group-walk', day: 6, title: 'Group walk', type: 'walk', detail: 'Saturday morning · fixed', icon: '⌁' },
-  { id: 'ride-distance', day: 0, title: 'Cycling · distance ride', type: 'cycling', detail: 'Steady, comfortable pace', icon: '↗' }
+const DEFAULT_DAY_TYPES = { 0: 'recovery', 1: 'gym', 2: 'bike', 3: 'recovery', 4: 'gym', 5: 'bike', 6: 'group-walk' };
+const DAY_TYPE_OPTIONS = [
+  { id: 'gym', title: 'Gym strength', icon: '◉', detail: 'Full session · 1 set × 8–10 reps to start' },
+  { id: 'bike', title: 'Bike ride', icon: '↗', detail: 'Easy, conversational effort; no hard intervals' },
+  { id: 'hike', title: 'Hike', icon: '⌁', detail: 'Comfortable route and pace' },
+  { id: 'recovery', title: 'Recovery day', icon: '◌', detail: 'Rest or gentle mobility' },
+  { id: 'light-gym', title: 'Light gym (rain / heat)', icon: '◉', detail: 'Easy stationary bike only; no strength circuit' },
+  { id: 'group-walk', title: 'Group walk', icon: '⌁', detail: 'Saturday morning · comfortable pace' }
 ];
 const STARTER_EXERCISES = [
-  { id: 'leg-press', name: 'Leg press', muscles: 'Legs · quadriceps · glutes', tip: 'Use a comfortable range of motion without locking your knees.' },
-  { id: 'leg-curl', name: 'Seated leg curl', muscles: 'Hamstrings · back of thighs', tip: 'Trains the muscles at the back of your thighs.' },
-  { id: 'chest-press', name: 'Chest press', muscles: 'Chest · triceps · front shoulders', tip: 'Keep your back against the pad and use a comfortable range.' },
-  { id: 'lat-pulldown', name: 'Lat pulldown', muscles: 'Back · lats · biceps', tip: 'Pull toward your upper chest without swinging your body.' },
-  { id: 'seated-row', name: 'Seated row', muscles: 'Mid-back · rear shoulders · biceps', tip: 'Keep your torso steady.' },
-  { id: 'shoulder-press', name: 'Shoulder press', muscles: 'Shoulders · triceps', tip: 'Optional initially. Use only if it feels comfortable and is appropriate for you.', optional: true },
-  { id: 'ab-crunch', name: 'Abdominal crunch machine', muscles: 'Core · abdominal muscles', tip: 'Use light resistance and controlled movement; don’t pull on your neck.' }
+  { id: 'leg-press', name: '1. Seated leg press', muscles: '1 × 8–10 · easy effort', tip: 'Comfortable range; do not lock knees or strain.' },
+  { id: 'chest-press', name: '2. Seated chest press', muscles: '1 × 8–10 · easy effort', tip: 'Use only after device-team approval for arm position and load.' },
+  { id: 'leg-curl', name: '3. Seated hamstring curl', muscles: '1 × 8–10 · easy effort', tip: 'Smooth motion in a comfortable range.' },
+  { id: 'seated-row', name: '4. Seated row', muscles: '1 × 8–10 · easy effort', tip: 'Use only after device-team approval; keep shoulders relaxed.' },
+  { id: 'leg-extension', name: '5. Seated leg extension', muscles: '1 × 8–10 · easy effort', tip: 'Light effort and smooth, pain-free motion.' },
+  { id: 'calf-raise', name: '6. Seated calf raise (optional)', muscles: '1 × 8–10 · easy effort', tip: 'Skip if the machine or position is uncomfortable.', optional: true }
 ];
 
 let state = loadState();
@@ -31,16 +29,38 @@ const $ = (selector) => document.querySelector(selector);
 const weekStrip = $('#weekStrip');
 
 function freshState() {
-  const nextWednesday = nextDay(new Date(), 3);
-  return { version: 1, machines: [], logs: {}, hikeAnchor: dateKey(nextWednesday) };
+  return { version: 2, machines: starterMachines(), logs: {}, dayOverrides: {} };
+}
+
+function starterMachines() {
+  return STARTER_EXERCISES.map((exercise) => ({
+    id: `starter-${exercise.id}`,
+    name: exercise.name.replace(/^\d+\. /, ''),
+    settings: 'Starting target: 1 × 8–10 · choose a light load after clinician clearance',
+    createdAt: new Date().toISOString()
+  }));
 }
 
 function loadState() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (parsed && parsed.version === 1 && parsed.logs && Array.isArray(parsed.machines)) return parsed;
+    if (parsed && parsed.logs && Array.isArray(parsed.machines)) {
+      if (parsed.version === 2) return { ...parsed, machines: parsed.machines.length ? parsed.machines : starterMachines(), dayOverrides: parsed.dayOverrides || {} };
+      if (parsed.version === 1) return migrateState(parsed);
+    }
   } catch (error) { console.warn('Could not read saved workout data.', error); }
   return freshState();
+}
+
+function migrateState(old) {
+  const logs = {};
+  const oldTypes = { 'gym-a': 'gym', 'gym-b': 'gym', 'ride-speed-a': 'bike', 'ride-speed-b': 'bike', 'ride-distance': 'bike', hike: 'hike', 'group-walk': 'group-walk' };
+  Object.entries(old.logs || {}).forEach(([key, log]) => {
+    const [date, oldId] = key.split('::');
+    const type = oldTypes[oldId];
+    if (type) logs[`${date}::${type}`] = log;
+  });
+  return { version: 2, machines: old.machines.length ? old.machines : starterMachines(), logs, dayOverrides: {} };
 }
 
 function saveState() {
@@ -49,23 +69,25 @@ function saveState() {
 
 function startOfDay(value) { const date = new Date(value); date.setHours(0, 0, 0, 0); return date; }
 function startOfWeek(value) { const date = startOfDay(value); date.setDate(date.getDate() - ((date.getDay() + 6) % 7)); return date; }
-function nextDay(value, day) { const date = startOfDay(value); let offset = (day - date.getDay() + 7) % 7; if (!offset) offset = 7; date.setDate(date.getDate() + offset); return date; }
 function addDays(value, amount) { const date = new Date(value); date.setDate(date.getDate() + amount); return date; }
 function dateKey(value) { const date = startOfDay(value); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; }
-function parseDate(key) { const [year, month, day] = key.split('-').map(Number); return new Date(year, month - 1, day); }
 function formatDate(value, options = { weekday: 'long', month: 'long', day: 'numeric' }) { return new Intl.DateTimeFormat(undefined, options).format(value); }
 function isSameDate(a, b) { return dateKey(a) === dateKey(b); }
 function activityDateId(date, activityId) { return `${dateKey(date)}::${activityId}`; }
 function getLog(date, activityId) { return state.logs[activityDateId(date, activityId)] || null; }
 
-function isHikeWeek(date) {
-  const anchor = parseDate(state.hikeAnchor);
-  const dayDifference = Math.round((startOfDay(date) - anchor) / 86400000);
-  return dayDifference >= 0 && dayDifference % 14 === 0;
+function activityTypeForDay(date) {
+  return state.dayOverrides[dateKey(date)] || DEFAULT_DAY_TYPES[date.getDay()];
+}
+
+function activityForDay(date) {
+  const type = activityTypeForDay(date);
+  return DAY_TYPE_OPTIONS.find((item) => item.id === type) || DAY_TYPE_OPTIONS.find((item) => item.id === 'recovery');
 }
 
 function activitiesForDay(date) {
-  return ACTIVITY_TEMPLATES.filter((item) => item.day === date.getDay() && (!item.alternate || isHikeWeek(date)));
+  const activity = activityForDay(date);
+  return activity ? [activity] : [];
 }
 
 function render() {
@@ -100,13 +122,14 @@ function renderDayPlan() {
   const container = $('#dayPlan');
   const activities = activitiesForDay(selectedDate);
   let html = `<p class="plan-date">${formatDate(selectedDate)}${isSameDate(selectedDate, new Date()) ? ' · Today' : ''}</p>`;
+  html += `<label class="day-type-picker">Plan this day<select id="dayTypePicker" aria-label="Choose activity for ${attr(formatDate(selectedDate))}">${DAY_TYPE_OPTIONS.map((option) => `<option value="${option.id}"${activityTypeForDay(selectedDate) === option.id ? ' selected' : ''}>${escapeHtml(option.title)}</option>`).join('')}</select></label>`;
   if (!activities.length) {
     html += '<div class="empty-day">A little breathing room. Use it for rest, stretching, or moving a workout if your week changes.</div>';
   } else {
     html += activities.map((activity) => {
       const log = getLog(selectedDate, activity.id);
-      const buttonText = log?.completed ? 'Edit log' : activity.type === 'gym' ? 'Start' : 'Log';
-      const extra = log?.completed ? (activity.type === 'gym' ? ((log.machines || []).length ? `${log.machines.length} machine${log.machines.length === 1 ? '' : 's'} logged` : 'Workout marked done') : logSummary(log)) : activity.detail;
+      const buttonText = log?.completed ? 'Edit log' : activity.id === 'gym' ? 'Start' : 'Log';
+      const extra = log?.completed ? (activity.id === 'gym' ? ((log.machines || []).length ? `${log.machines.length} machine${log.machines.length === 1 ? '' : 's'} logged` : 'Workout marked done') : logSummary(log)) : activity.detail;
       return `<article class="activity-card">
         <div class="activity-symbol" aria-hidden="true">${activity.icon}</div>
         <div class="activity-body"><div class="activity-title-row"><span class="activity-title">${escapeHtml(activity.title)}</span></div>
@@ -116,6 +139,10 @@ function renderDayPlan() {
     }).join('');
   }
   container.innerHTML = html;
+  $('#dayTypePicker').addEventListener('change', (event) => {
+    state.dayOverrides[dateKey(selectedDate)] = event.target.value;
+    saveState(); render(); showToast('Day plan updated.');
+  });
   container.querySelectorAll('[data-log]').forEach((button) => button.addEventListener('click', () => openLog(button.dataset.log)));
 }
 
@@ -124,11 +151,11 @@ function renderSummary() {
   const days = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
   const scheduled = days.flatMap((day) => activitiesForDay(day).map((activity) => ({ day, activity })));
   const completed = scheduled.filter(({ day, activity }) => getLog(day, activity.id)?.completed).length;
-  const cycling = scheduled.filter(({ activity }) => activity.type === 'cycling').length;
+  const cycling = scheduled.filter(({ activity }) => activity.id === 'bike').length;
   $('#weeklySummary').innerHTML = `
     <div class="stat-card"><div class="stat-value">${completed}<span class="stat-label"> / ${scheduled.length}</span></div><div class="stat-label">sessions done</div></div>
     <div class="stat-card"><div class="stat-value">${cycling}</div><div class="stat-label">rides planned</div></div>
-    <div class="stat-card"><div class="stat-value">${scheduled.some(({ activity }) => activity.type === 'hike') ? 'Hike' : 'Rest'}</div><div class="stat-label">Wednesday</div></div>`;
+    <div class="stat-card"><div class="stat-value">${scheduled.filter(({ activity }) => activity.id === 'gym').length}</div><div class="stat-label">strength days planned</div></div>`;
 }
 
 function renderMachines() {
@@ -154,19 +181,19 @@ function logSummary(log) {
 }
 
 function openLog(activityId) {
-  const activity = ACTIVITY_TEMPLATES.find((item) => item.id === activityId);
+  const activity = DAY_TYPE_OPTIONS.find((item) => item.id === activityId);
   const existing = getLog(selectedDate, activityId) || {};
   activeLog = { activity, key: activityDateId(selectedDate, activityId) };
   $('#logTitle').textContent = activity.title;
   $('#logDateLabel').textContent = formatDate(selectedDate).toUpperCase();
   const fields = $('#logFields');
-  if (activity.type === 'gym') {
+  if (activity.id === 'gym') {
     fields.innerHTML = gymFields(existing);
     bindMachineLogFields();
-  } else if (activity.type === 'cycling') {
-    fields.innerHTML = `<div class="grid-two"><label>Duration <span class="label-hint">minutes</span><input name="duration" inputmode="numeric" type="number" min="0" step="1" value="${attr(existing.duration || '')}" placeholder="45"></label>
-      <label>Distance <span class="label-hint">miles</span><input name="distance" inputmode="decimal" type="number" min="0" step="0.1" value="${attr(existing.distance || '')}" placeholder="12.5"></label></div>
-      ${activity.id.includes('speed') ? `<label>Interval notes<textarea name="program" rows="2" placeholder="e.g. 6 × 1 min fast, 2 min easy">${escapeHtml(existing.program || '')}</textarea></label>` : '<label>Effort or route notes<textarea name="program" rows="2" placeholder="Route, pace, how it felt…">'+escapeHtml(existing.program || '')+'</textarea></label>'}
+  } else if (activity.id === 'bike' || activity.id === 'light-gym') {
+    fields.innerHTML = `<div class="${activity.id === 'bike' ? 'grid-two' : ''}"><label>Duration <span class="label-hint">minutes</span><input name="duration" inputmode="numeric" type="number" min="0" step="1" value="${attr(existing.duration || '')}" placeholder="${activity.id === 'bike' ? '45' : '20'}"></label>
+      ${activity.id === 'bike' ? `<label>Distance <span class="label-hint">miles</span><input name="distance" inputmode="decimal" type="number" min="0" step="0.1" value="${attr(existing.distance || '')}" placeholder="12.5"></label>` : ''}</div>
+      <label>Effort or route notes<textarea name="program" rows="2" placeholder="Easy pace, route, how it felt…">${escapeHtml(existing.program || '')}</textarea></label>
       <label>Notes <span class="label-hint">(optional)</span><textarea name="notes" rows="2" placeholder="Anything to remember next time">${escapeHtml(existing.notes || '')}</textarea></label>`;
   } else {
     fields.innerHTML = `<label>Duration <span class="label-hint">minutes · optional</span><input name="duration" inputmode="numeric" type="number" min="0" step="1" value="${attr(existing.duration || '')}" placeholder="60"></label>
@@ -176,20 +203,17 @@ function openLog(activityId) {
 }
 
 function gymFields(existing) {
-  const oldMachines = Array.isArray(existing.machines) ? existing.machines : [];
+  const oldMachines = Array.isArray(existing.machines) && existing.machines.length
+    ? existing.machines
+    : state.machines.filter((machine) => machine.id.startsWith('starter-') && !STARTER_EXERCISES.find((exercise) => machine.id === `starter-${exercise.id}`)?.optional).map((machine) => ({ machineId: machine.id, settings: machine.settings, sets: '1', reps: '8' }));
   const cards = oldMachines.map((item) => machineLogCard(item.machineId, item)).join('');
   const options = state.machines.map((item) => `<option value="${attr(item.id)}">${escapeHtml(item.name)}</option>`).join('');
-  return `<p class="section-copy">Pick any machine that’s free. Your previous settings appear as a reminder; change them for today’s session.</p>
-    <div class="visit-checklist"><div class="visit-checklist-heading"><strong>Starting exercise list</strong><span>Check off as you go</span></div>
-      <p class="visit-checklist-note">These checkmarks are just for this visit and won’t be saved.</p>
-      <div class="visit-exercises">${STARTER_EXERCISES.map((exercise) => `<label class="visit-exercise" for="visit-${exercise.id}">
-        <input id="visit-${exercise.id}" name="visitChecklist" type="checkbox" value="${exercise.id}">
-        <span class="visit-exercise-copy"><span class="visit-exercise-title">${escapeHtml(exercise.name)}${exercise.optional ? '<em>Optional</em>' : ''}</span><span class="visit-exercise-muscles">${escapeHtml(exercise.muscles)}</span><span class="visit-exercise-tip">${escapeHtml(exercise.tip)}</span></span>
-      </label>`).join('')}</div>
-    </div>
+  return `<p class="section-copy">Start only after your cardiology/device team clears this plan. Begin with 1 set × 8–10 reps at easy effort; leave several reps in reserve, breathe continuously, and rest 90–120 seconds or longer. Skip any machine that causes discomfort or requires straining.</p>
+    <p class="visit-checklist-note">The suggested machines are preloaded below in plan order. Remove any you skip today; add or change machines as needed.</p>
     <div id="machineLogCards">${cards}</div>
     ${state.machines.length ? `<label>Add a machine<select id="machinePicker"><option value="">Choose from your list…</option>${options}</select></label>` : '<div class="empty-library">Add machines to your library when you start using them. You can come back and log this workout any time.</div>'}
-    <label>Workout notes <span class="label-hint">(optional)</span><textarea name="notes" rows="2" placeholder="How the session felt">${escapeHtml(existing.notes || '')}</textarea></label>`;
+    <div class="progression-note"><strong>Progress only with clearance</strong><br>After at least 4 symptom-free sessions over 2 weeks, build reps to 12. After 2 stable weeks at 1 × 12, add a second set to 1–2 exercises. After 2 stable weeks at 2 × 12, increase one machine by its smallest step and return to 8 reps. Change one thing at a time.</div>
+    <label>Workout notes <span class="label-hint">(optional)</span><textarea name="notes" rows="2" placeholder="Effort, symptoms, recovery, or how the session felt">${escapeHtml(existing.notes || '')}</textarea></label>`;
 }
 
 function machineLogCard(machineId, saved = {}) {
@@ -242,7 +266,7 @@ function saveLog(event) {
   const form = $('#logForm');
   const formData = new FormData(form);
   const log = { date: dateKey(selectedDate), completed: true, notes: String(formData.get('notes') || '').trim() };
-  if (activeLog.activity.type === 'gym') {
+  if (activeLog.activity.id === 'gym') {
     log.machines = [...$('#machineLogCards').querySelectorAll('[data-machine-card]')].map((card) => {
       const setsReps = card.querySelector('[data-field="setsreps"]').value.trim().split(/\s*[×xX]\s*/);
       return {
@@ -253,19 +277,12 @@ function saveLog(event) {
         notes: card.querySelector('[data-field="notes"]').value.trim()
       };
     });
-    const checkedThisVisit = formData.getAll('visitChecklist').length > 0;
     if (!log.machines.length && !log.notes) {
-      if (checkedThisVisit) {
-        $('#logDialog').close();
-        render();
-        showToast('Checkmarks cleared. Nothing was saved.');
-        return;
-      }
-      showToast('Check an exercise, add a machine, or add a note before saving.'); return;
+      showToast('Log at least one machine or add a note before saving.'); return;
     }
   } else {
     log.duration = String(formData.get('duration') || '').trim();
-    if (activeLog.activity.type === 'cycling') log.distance = String(formData.get('distance') || '').trim();
+    if (activeLog.activity.id === 'bike') log.distance = String(formData.get('distance') || '').trim();
     log.program = String(formData.get('program') || '').trim();
   }
   state.logs[activeLog.key] = log;
@@ -321,9 +338,9 @@ async function importBackup(file) {
   if (!file) return;
   try {
     const parsed = JSON.parse(await file.text());
-    if (parsed.version !== 1 || !Array.isArray(parsed.machines) || !parsed.logs || typeof parsed.logs !== 'object') throw new Error('This file does not look like a Stride backup.');
+    if (![1, 2].includes(parsed.version) || !Array.isArray(parsed.machines) || !parsed.logs || typeof parsed.logs !== 'object') throw new Error('This file does not look like a Stride backup.');
     if (!window.confirm('Restore this backup? It will replace the workout data currently in this browser.')) return;
-    state = { version: 1, machines: parsed.machines, logs: parsed.logs, hikeAnchor: parsed.hikeAnchor || freshState().hikeAnchor };
+    state = parsed.version === 1 ? migrateState(parsed) : { version: 2, machines: parsed.machines, logs: parsed.logs, dayOverrides: parsed.dayOverrides || {} };
     saveState(); $('#backupDialog').close(); render(); showToast('Backup restored.');
   } catch (error) { showToast(error.message || 'Could not read that backup file.'); }
 }
