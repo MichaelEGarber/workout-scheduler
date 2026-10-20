@@ -1,6 +1,5 @@
 const STORAGE_KEY = 'stride-workout-data-v1';
 const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const DEFAULT_DAY_TYPES = { 0: 'recovery', 1: 'gym', 2: 'bike', 3: 'recovery', 4: 'gym', 5: 'bike', 6: 'group-walk' };
 const DAY_TYPE_OPTIONS = [
   { id: 'gym', title: 'Gym strength', icon: '◉', detail: 'Full session · 1 set × 8–10 reps to start' },
   { id: 'bike', title: 'Bike ride', icon: '↗', detail: 'Easy, conversational effort; no hard intervals' },
@@ -29,7 +28,9 @@ const $ = (selector) => document.querySelector(selector);
 const weekStrip = $('#weekStrip');
 
 function freshState() {
-  return { version: 2, machines: starterMachines(), logs: {}, dayOverrides: {} };
+  const fresh = { version: 2, machines: starterMachines(), logs: {}, dayOverrides: {}, cycleAnchor: cycleAnchorDate(new Date()) };
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh)); } catch (error) { console.warn('Could not save the workout schedule.', error); }
+  return fresh;
 }
 
 function starterMachines() {
@@ -45,8 +46,16 @@ function loadState() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (parsed && parsed.logs && Array.isArray(parsed.machines)) {
-      if (parsed.version === 2) return { ...parsed, machines: parsed.machines.length ? parsed.machines : starterMachines(), dayOverrides: parsed.dayOverrides || {} };
-      if (parsed.version === 1) return migrateState(parsed);
+      if (parsed.version === 2) {
+        const hydrated = { ...parsed, machines: parsed.machines.length ? parsed.machines : starterMachines(), dayOverrides: parsed.dayOverrides || {}, cycleAnchor: parsed.cycleAnchor || cycleAnchorDate(new Date()) };
+        if (!parsed.cycleAnchor) localStorage.setItem(STORAGE_KEY, JSON.stringify(hydrated));
+        return hydrated;
+      }
+      if (parsed.version === 1) {
+        const migrated = migrateState(parsed);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+        return migrated;
+      }
     }
   } catch (error) { console.warn('Could not read saved workout data.', error); }
   return freshState();
@@ -60,7 +69,7 @@ function migrateState(old) {
     const type = oldTypes[oldId];
     if (type) logs[`${date}::${type}`] = log;
   });
-  return { version: 2, machines: old.machines.length ? old.machines : starterMachines(), logs, dayOverrides: {} };
+  return { version: 2, machines: old.machines.length ? old.machines : starterMachines(), logs, dayOverrides: {}, cycleAnchor: cycleAnchorDate(new Date()) };
 }
 
 function saveState() {
@@ -71,13 +80,28 @@ function startOfDay(value) { const date = new Date(value); date.setHours(0, 0, 0
 function startOfWeek(value) { const date = startOfDay(value); date.setDate(date.getDate() - ((date.getDay() + 6) % 7)); return date; }
 function addDays(value, amount) { const date = new Date(value); date.setDate(date.getDate() + amount); return date; }
 function dateKey(value) { const date = startOfDay(value); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; }
+function parseDate(key) { const [year, month, day] = key.split('-').map(Number); return new Date(year, month - 1, day); }
+function cycleAnchorDate(value) { const date = startOfDay(value); if (date.getDay() === 6) date.setDate(date.getDate() + 1); return dateKey(date); }
 function formatDate(value, options = { weekday: 'long', month: 'long', day: 'numeric' }) { return new Intl.DateTimeFormat(undefined, options).format(value); }
 function isSameDate(a, b) { return dateKey(a) === dateKey(b); }
 function activityDateId(date, activityId) { return `${dateKey(date)}::${activityId}`; }
 function getLog(date, activityId) { return state.logs[activityDateId(date, activityId)] || null; }
 
 function activityTypeForDay(date) {
-  return state.dayOverrides[dateKey(date)] || DEFAULT_DAY_TYPES[date.getDay()];
+  const key = dateKey(date);
+  if (state.dayOverrides[key]) return state.dayOverrides[key];
+  if (date.getDay() === 6) return 'group-walk';
+
+  const anchor = parseDate(state.cycleAnchor || dateKey(new Date()));
+  const targetKey = key;
+  const direction = targetKey >= dateKey(anchor) ? 1 : -1;
+  let cursor = anchor;
+  let steps = 0;
+  while (dateKey(cursor) !== targetKey) {
+    cursor = addDays(cursor, direction);
+    if (cursor.getDay() !== 6) steps += direction;
+  }
+  return Math.abs(steps) % 2 === 0 ? 'gym' : 'bike';
 }
 
 function activityForDay(date) {
@@ -88,6 +112,12 @@ function activityForDay(date) {
 function activitiesForDay(date) {
   const activity = activityForDay(date);
   return activity ? [activity] : [];
+}
+
+function activityShortLabel(date) {
+  const activity = activityForDay(date);
+  const labels = { gym: 'Gym', bike: 'Bike', hike: 'Hike', recovery: 'Recovery', 'light-gym': 'Light gym', 'group-walk': 'Walk' };
+  return labels[activity.id] || activity.title;
 }
 
 function render() {
@@ -107,8 +137,8 @@ function renderWeek() {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = `day-chip${isSameDate(date, selectedDate) ? ' active' : ''}${isSameDate(date, today) ? ' today' : ''}${activitiesForDay(date).length ? ' has-plan' : ''}`;
-    chip.setAttribute('aria-label', formatDate(date));
-    chip.innerHTML = `<span class="day-name">${SHORT_DAYS[date.getDay()]}</span><span class="day-num">${date.getDate()}</span>`;
+    chip.setAttribute('aria-label', `${formatDate(date)}: ${activityShortLabel(date)}`);
+    chip.innerHTML = `<span class="day-name">${SHORT_DAYS[date.getDay()]}</span><span class="day-num">${date.getDate()}</span><span class="day-type">${escapeHtml(activityShortLabel(date))}</span>`;
     chip.addEventListener('click', () => { selectedDate = date; render(); });
     weekStrip.append(chip);
   }

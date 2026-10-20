@@ -4,7 +4,7 @@ A small, mobile-friendly workout planner designed for one person. GitHub Pages s
 
 ## What's included
 
-- Default week: Monday gym strength, Tuesday bike, Wednesday recovery, Thursday gym strength, Friday bike, Saturday morning group walk, Sunday recovery.
+- Default week: gym and outdoor bike alternate from the first gym day (today on first setup) across Sunday through Friday; Saturday defaults to the group walk and does not change the rotation. There are no default rest days.
 - Change any date to gym strength, bike ride, hike, recovery day, light gym (rain/heat), or group walk. Choices are saved per date and remain editable.
 - Ordered starter strength circuit: seated leg press, chest press, hamstring curl, seated row, leg extension, optional seated calf raise. Start at 1 × 8–10, easy effort; progression milestones appear in the workout logger.
 - Strength progression prompts use two symptom-free weeks at each stage; no heart-rate target is prescribed.
