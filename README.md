@@ -7,7 +7,8 @@ A small, mobile-friendly workout planner designed for one person. GitHub Pages s
 - Default week: Monday gym strength, Tuesday bike, Wednesday recovery, Thursday gym strength, Friday bike, Saturday morning group walk, Sunday recovery.
 - Change any date to gym strength, bike ride, hike, recovery day, light gym (rain/heat), or group walk. Choices are saved per date and remain editable.
 - Ordered starter strength circuit: seated leg press, chest press, hamstring curl, seated row, leg extension, optional seated calf raise. Start at 1 × 8–10, easy effort; progression milestones appear in the workout logger.
-- Safety reminder to get cardiac/device-team guidance before beginning or progressing strength work; no heart-rate target is prescribed.
+- Strength progression prompts use two symptom-free weeks at each stage; no heart-rate target is prescribed.
+- Hike logs include trail name, length, and duration. Outdoor bike logs include a brief route/trail description, distance, and duration.
 - Personal machine list with saved settings and previous weight, sets, and reps shown when logging again.
 - Session logging for duration, distance, notes, machines, and effort context.
 - JSON backup and restore. Existing version 1 backups and saved workout logs migrate when loaded.

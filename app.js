@@ -11,9 +11,9 @@ const DAY_TYPE_OPTIONS = [
 ];
 const STARTER_EXERCISES = [
   { id: 'leg-press', name: '1. Seated leg press', muscles: '1 × 8–10 · easy effort', tip: 'Comfortable range; do not lock knees or strain.' },
-  { id: 'chest-press', name: '2. Seated chest press', muscles: '1 × 8–10 · easy effort', tip: 'Use only after device-team approval for arm position and load.' },
+  { id: 'chest-press', name: '2. Seated chest press', muscles: '1 × 8–10 · easy effort', tip: 'Use a comfortable range and stop if the position causes discomfort.' },
   { id: 'leg-curl', name: '3. Seated hamstring curl', muscles: '1 × 8–10 · easy effort', tip: 'Smooth motion in a comfortable range.' },
-  { id: 'seated-row', name: '4. Seated row', muscles: '1 × 8–10 · easy effort', tip: 'Use only after device-team approval; keep shoulders relaxed.' },
+  { id: 'seated-row', name: '4. Seated row', muscles: '1 × 8–10 · easy effort', tip: 'Keep shoulders relaxed and stop if the position causes discomfort.' },
   { id: 'leg-extension', name: '5. Seated leg extension', muscles: '1 × 8–10 · easy effort', tip: 'Light effort and smooth, pain-free motion.' },
   { id: 'calf-raise', name: '6. Seated calf raise (optional)', muscles: '1 × 8–10 · easy effort', tip: 'Skip if the machine or position is uncomfortable.', optional: true }
 ];
@@ -36,7 +36,7 @@ function starterMachines() {
   return STARTER_EXERCISES.map((exercise) => ({
     id: `starter-${exercise.id}`,
     name: exercise.name.replace(/^\d+\. /, ''),
-    settings: 'Starting target: 1 × 8–10 · choose a light load after clinician clearance',
+    settings: 'Starting target: 1 × 8–10 · begin with a light, comfortable load',
     createdAt: new Date().toISOString()
   }));
 }
@@ -176,7 +176,7 @@ function logSummary(log) {
   const parts = [];
   if (log.duration) parts.push(`${log.duration} min`);
   if (log.distance) parts.push(`${log.distance} mi`);
-  if (log.program) parts.push(log.program);
+  if (log.route || log.program) parts.push(log.route || log.program);
   return parts.join(' · ') || 'Logged';
 }
 
@@ -190,10 +190,15 @@ function openLog(activityId) {
   if (activity.id === 'gym') {
     fields.innerHTML = gymFields(existing);
     bindMachineLogFields();
+  } else if (activity.id === 'hike') {
+    fields.innerHTML = `<label>Trail name<input name="route" maxlength="120" value="${attr(existing.route || '')}" placeholder="Trail or route"></label>
+      <div class="grid-two"><label>Hike length <span class="label-hint">miles</span><input name="distance" inputmode="decimal" type="number" min="0" step="0.1" value="${attr(existing.distance || '')}" placeholder="3.5"></label>
+      <label>Hike duration <span class="label-hint">minutes</span><input name="duration" inputmode="numeric" type="number" min="0" step="1" value="${attr(existing.duration || '')}" placeholder="90"></label></div>
+      <label>Notes <span class="label-hint">(optional)</span><textarea name="notes" rows="2" placeholder="Conditions or how it felt">${escapeHtml(existing.notes || '')}</textarea></label>`;
   } else if (activity.id === 'bike' || activity.id === 'light-gym') {
     fields.innerHTML = `<div class="${activity.id === 'bike' ? 'grid-two' : ''}"><label>Duration <span class="label-hint">minutes</span><input name="duration" inputmode="numeric" type="number" min="0" step="1" value="${attr(existing.duration || '')}" placeholder="${activity.id === 'bike' ? '45' : '20'}"></label>
-      ${activity.id === 'bike' ? `<label>Distance <span class="label-hint">miles</span><input name="distance" inputmode="decimal" type="number" min="0" step="0.1" value="${attr(existing.distance || '')}" placeholder="12.5"></label>` : ''}</div>
-      <label>Effort or route notes<textarea name="program" rows="2" placeholder="Easy pace, route, how it felt…">${escapeHtml(existing.program || '')}</textarea></label>
+      ${activity.id === 'bike' ? `<label>Distance ridden <span class="label-hint">miles</span><input name="distance" inputmode="decimal" type="number" min="0" step="0.1" value="${attr(existing.distance || '')}" placeholder="12.5"></label>` : ''}</div>
+      ${activity.id === 'bike' ? `<label>Route or trail ridden<textarea name="route" rows="2" placeholder="Brief description of the route">${escapeHtml(existing.route || existing.program || '')}</textarea></label>` : `<label>Effort notes<textarea name="program" rows="2" placeholder="Easy indoor pace, how it felt…">${escapeHtml(existing.program || '')}</textarea></label>`}
       <label>Notes <span class="label-hint">(optional)</span><textarea name="notes" rows="2" placeholder="Anything to remember next time">${escapeHtml(existing.notes || '')}</textarea></label>`;
   } else {
     fields.innerHTML = `<label>Duration <span class="label-hint">minutes · optional</span><input name="duration" inputmode="numeric" type="number" min="0" step="1" value="${attr(existing.duration || '')}" placeholder="60"></label>
@@ -208,11 +213,11 @@ function gymFields(existing) {
     : state.machines.filter((machine) => machine.id.startsWith('starter-') && !STARTER_EXERCISES.find((exercise) => machine.id === `starter-${exercise.id}`)?.optional).map((machine) => ({ machineId: machine.id, settings: machine.settings, sets: '1', reps: '8' }));
   const cards = oldMachines.map((item) => machineLogCard(item.machineId, item)).join('');
   const options = state.machines.map((item) => `<option value="${attr(item.id)}">${escapeHtml(item.name)}</option>`).join('');
-  return `<p class="section-copy">Start only after your cardiology/device team clears this plan. Begin with 1 set × 8–10 reps at easy effort; leave several reps in reserve, breathe continuously, and rest 90–120 seconds or longer. Skip any machine that causes discomfort or requires straining.</p>
+  return `<p class="section-copy">Follow your activity-as-tolerated guidance. Begin with 1 set × 8–10 reps at easy effort; leave several reps in reserve, breathe continuously, and rest 90–120 seconds or longer. Skip any machine that causes discomfort or requires straining.</p>
     <p class="visit-checklist-note">The suggested machines are preloaded below in plan order. Remove any you skip today; add or change machines as needed.</p>
     <div id="machineLogCards">${cards}</div>
     ${state.machines.length ? `<label>Add a machine<select id="machinePicker"><option value="">Choose from your list…</option>${options}</select></label>` : '<div class="empty-library">Add machines to your library when you start using them. You can come back and log this workout any time.</div>'}
-    <div class="progression-note"><strong>Progress only with clearance</strong><br>After at least 4 symptom-free sessions over 2 weeks, build reps to 12. After 2 stable weeks at 1 × 12, add a second set to 1–2 exercises. After 2 stable weeks at 2 × 12, increase one machine by its smallest step and return to 8 reps. Change one thing at a time.</div>
+    <div class="progression-note"><strong>Progress after symptom-free use</strong><br>After 2 symptom-free weeks at 1 × 8–10, gradually add reps up to 12. After 2 symptom-free weeks completing 1 × 12, add a second set to 1–2 exercises. After 2 symptom-free weeks at 2 × 12, increase one machine by its smallest step and return to 8–10 reps. Change one thing at a time.</div>
     <label>Workout notes <span class="label-hint">(optional)</span><textarea name="notes" rows="2" placeholder="Effort, symptoms, recovery, or how the session felt">${escapeHtml(existing.notes || '')}</textarea></label>`;
 }
 
@@ -282,7 +287,8 @@ function saveLog(event) {
     }
   } else {
     log.duration = String(formData.get('duration') || '').trim();
-    if (activeLog.activity.id === 'bike') log.distance = String(formData.get('distance') || '').trim();
+    if (activeLog.activity.id === 'bike' || activeLog.activity.id === 'hike') log.distance = String(formData.get('distance') || '').trim();
+    if (activeLog.activity.id === 'bike' || activeLog.activity.id === 'hike') log.route = String(formData.get('route') || '').trim();
     log.program = String(formData.get('program') || '').trim();
   }
   state.logs[activeLog.key] = log;
