@@ -28,7 +28,7 @@ const $ = (selector) => document.querySelector(selector);
 const weekStrip = $('#weekStrip');
 
 function freshState() {
-  const fresh = { version: 2, machines: starterMachines(), logs: {}, dayOverrides: {}, cycleAnchor: cycleAnchorDate(new Date()) };
+  const fresh = { version: 2, machines: starterMachines(), logs: {}, dayOverrides: {}, cycleAnchor: cycleAnchorDate(new Date()), updatedAt: new Date().toISOString() };
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh)); } catch (error) { console.warn('Could not save the workout schedule.', error); }
   return fresh;
 }
@@ -47,7 +47,7 @@ function loadState() {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (parsed && parsed.logs && Array.isArray(parsed.machines)) {
       if (parsed.version === 2) {
-        const hydrated = { ...parsed, machines: parsed.machines.length ? parsed.machines : starterMachines(), dayOverrides: parsed.dayOverrides || {}, cycleAnchor: parsed.cycleAnchor || cycleAnchorDate(new Date()) };
+        const hydrated = { ...parsed, machines: parsed.machines.length ? parsed.machines : starterMachines(), dayOverrides: parsed.dayOverrides || {}, cycleAnchor: parsed.cycleAnchor || cycleAnchorDate(new Date()), updatedAt: parsed.updatedAt || new Date().toISOString() };
         if (!parsed.cycleAnchor) localStorage.setItem(STORAGE_KEY, JSON.stringify(hydrated));
         return hydrated;
       }
@@ -69,10 +69,11 @@ function migrateState(old) {
     const type = oldTypes[oldId];
     if (type) logs[`${date}::${type}`] = log;
   });
-  return { version: 2, machines: old.machines.length ? old.machines : starterMachines(), logs, dayOverrides: {}, cycleAnchor: cycleAnchorDate(new Date()) };
+  return { version: 2, machines: old.machines.length ? old.machines : starterMachines(), logs, dayOverrides: {}, cycleAnchor: cycleAnchorDate(new Date()), updatedAt: new Date().toISOString() };
 }
 
 function saveState() {
+  state.updatedAt = new Date().toISOString();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
@@ -240,7 +241,7 @@ function openLog(activityId) {
 function gymFields(existing) {
   const oldMachines = Array.isArray(existing.machines) && existing.machines.length
     ? existing.machines
-    : state.machines.filter((machine) => machine.id.startsWith('starter-') && !STARTER_EXERCISES.find((exercise) => machine.id === `starter-${exercise.id}`)?.optional).map((machine) => ({ machineId: machine.id, settings: machine.settings, sets: '1', reps: '8' }));
+    : state.machines.filter((machine) => machine.id.startsWith('starter-') && !STARTER_EXERCISES.find((exercise) => machine.id === `starter-${exercise.id}`)?.optional).map((machine) => ({ machineId: machine.id }));
   const cards = oldMachines.map((item) => machineLogCard(item.machineId, item)).join('');
   const options = state.machines.map((item) => `<option value="${attr(item.id)}">${escapeHtml(item.name)}</option>`).join('');
   return `<p class="section-copy">Follow your activity-as-tolerated guidance. Begin with 1 set × 8–10 reps at easy effort; leave several reps in reserve, breathe continuously, and rest 90–120 seconds or longer. Skip any machine that causes discomfort or requires straining.</p>
@@ -257,8 +258,8 @@ function machineLogCard(machineId, saved = {}) {
   const recent = lastMachineLog(machineId);
   const settings = saved.settings ?? recent?.settings ?? machine.settings ?? '';
   const weight = saved.weight ?? recent?.weight ?? '';
-  const sets = saved.sets ?? recent?.sets ?? '';
-  const reps = saved.reps ?? recent?.reps ?? '';
+  const sets = saved.sets ?? recent?.sets ?? (machine.id.startsWith('starter-') ? '1' : '');
+  const reps = saved.reps ?? recent?.reps ?? (machine.id.startsWith('starter-') ? '8' : '');
   const program = saved.program ?? recent?.program ?? '';
   return `<div class="machine-log-card" data-machine-card="${attr(machine.id)}">
     <div class="machine-log-heading"><span>${escapeHtml(machine.name)}</span><button type="button" class="use-last" data-remove-machine="${attr(machine.id)}">Remove</button></div>
@@ -402,3 +403,203 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 
+
+const CLOUD_CONFIG_KEY = 'stride-cloud-config-v1';
+const CLOUD_SYNC_META_KEY = 'stride-cloud-sync-meta-v1';
+let cloudClient = null;
+let cloudSubscription = null;
+let cloudSession = null;
+let cloudBusy = false;
+
+function readCloudConfig() {
+  try { return JSON.parse(localStorage.getItem(CLOUD_CONFIG_KEY) || 'null'); }
+  catch { return null; }
+}
+function updateResumeProjectLink(url) {
+  const button = $('#resumeProjectButton');
+  try {
+    const projectUrl = new URL(url);
+    const projectRef = projectUrl.hostname.endsWith('.supabase.co') ? projectUrl.hostname.slice(0, -'.supabase.co'.length) : '';
+    if (!projectRef) { button.hidden = true; return; }
+    button.href = `https://supabase.com/dashboard/project/${encodeURIComponent(projectRef)}`;
+    button.hidden = false;
+  } catch { button.hidden = true; }
+}
+function setCloudStatus(message, kind = '') {
+  const status = $('#cloudStatus');
+  status.textContent = message;
+  status.className = `cloud-status${kind ? ` ${kind}` : ''}`;
+}
+function refreshCloudUI() {
+  const authenticated = Boolean(cloudSession?.user);
+  $('#cloudAuthSection').hidden = !cloudClient;
+  $('#cloudAccountLabel').textContent = authenticated ? `Signed in as ${cloudSession.user.email || 'your account'}` : 'Not signed in';
+  $('#cloudSignOutButton').hidden = !authenticated;
+  $('#sendCloudLinkButton').hidden = authenticated;
+  $('#cloudEmail').hidden = authenticated;
+  $('#syncCloudButton').disabled = !authenticated || cloudBusy;
+  $('#syncCloudButton').textContent = cloudBusy ? 'Syncing…' : 'Sync now';
+}
+function clearCloudSubscription() {
+  if (cloudSubscription) cloudSubscription.unsubscribe();
+  cloudSubscription = null;
+}
+async function configureCloud(url, key) {
+  if (!window.supabase?.createClient) throw new Error('The Supabase library did not load. Check your internet connection and reload this page.');
+  clearCloudSubscription();
+  cloudClient = window.supabase.createClient(url, key);
+  const { data, error } = await cloudClient.auth.getSession();
+  if (error) throw error;
+  cloudSession = data.session;
+  const { data: listener } = cloudClient.auth.onAuthStateChange((_event, session) => {
+    cloudSession = session;
+    refreshCloudUI();
+    if (session) setCloudStatus(`Signed in as ${session.user.email || 'your account'}. Sync whenever you want to copy changes between devices.`, 'success');
+  });
+  cloudSubscription = listener.subscription;
+  refreshCloudUI();
+  setCloudStatus(cloudSession ? `Connected and signed in as ${cloudSession.user.email || 'your account'}.` : 'Connection saved. Enter your email to receive a sign-in link.');
+}
+async function initializeCloud() {
+  const config = readCloudConfig();
+  if (!config?.url || !config?.key) return;
+  $('#cloudUrl').value = config.url;
+  $('#cloudPublishableKey').value = config.key;
+  updateResumeProjectLink(config.url);
+  try { await configureCloud(config.url, config.key); }
+  catch (error) { setCloudStatus(error.message || 'Could not connect to the saved Supabase project.', 'error'); }
+}
+function validateCloudPayload(payload) {
+  return Boolean(payload && payload.version === 2 && payload.logs && typeof payload.logs === 'object' && Array.isArray(payload.machines) && payload.dayOverrides && typeof payload.dayOverrides === 'object');
+}
+function isFreshLocalState() {
+  const defaultMachines = starterMachines();
+  const machinesMatch = state.machines.length === defaultMachines.length && state.machines.every((machine, index) => machine.id === defaultMachines[index].id && machine.name === defaultMachines[index].name && machine.settings === defaultMachines[index].settings);
+  return machinesMatch && Object.keys(state.logs).length === 0 && Object.keys(state.dayOverrides).length === 0;
+}
+function readSyncMeta() {
+  try { return JSON.parse(localStorage.getItem(CLOUD_SYNC_META_KEY) || 'null'); }
+  catch { return null; }
+}
+function saveSyncMeta(snapshot, cloudUpdatedAt, userId) {
+  localStorage.setItem(CLOUD_SYNC_META_KEY, JSON.stringify({ snapshot, cloudUpdatedAt, userId }));
+}
+function samePayload(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+async function syncCloudData() {
+  if (!cloudClient || !cloudSession?.user || cloudBusy) return;
+  cloudBusy = true;
+  refreshCloudUI();
+  try {
+    const userId = cloudSession.user.id;
+    const { data: remote, error } = await cloudClient.from('workout_sync').select('payload, updated_at').eq('user_id', userId).maybeSingle();
+    if (error) throw error;
+    const meta = readSyncMeta();
+    const matchingMeta = meta?.userId === userId ? meta : null;
+    const localSnapshot = JSON.stringify(state);
+    const localChanged = Boolean(matchingMeta && matchingMeta.snapshot !== localSnapshot);
+
+    if (!remote) {
+      const { data: written, error: writeError } = await cloudClient.from('workout_sync').upsert({ user_id: userId, payload: state, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).select('updated_at').single();
+      if (writeError) throw writeError;
+      saveSyncMeta(localSnapshot, written.updated_at, userId);
+      setCloudStatus('Your workout data has been saved to your private cloud account.', 'success');
+      return;
+    }
+    if (!validateCloudPayload(remote.payload)) throw new Error('The cloud record does not look like a valid workout backup. Nothing was changed.');
+
+    if (!matchingMeta) {
+      if (samePayload(state, remote.payload)) {
+        saveSyncMeta(localSnapshot, remote.updated_at, userId);
+        setCloudStatus('This device and cloud copy already match.', 'success');
+        return;
+      }
+      if (isFreshLocalState()) {
+        state = remote.payload;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        render();
+        saveSyncMeta(JSON.stringify(state), remote.updated_at, userId);
+        setCloudStatus('Loaded your cloud workout data onto this device.', 'success');
+        return;
+      }
+      const keepCloud = window.confirm('This device has workout data and this is its first sync. Press OK to replace this device with the cloud copy. Press Cancel to keep this device and replace the cloud copy.');
+      if (keepCloud) {
+        state = remote.payload;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        render();
+        saveSyncMeta(JSON.stringify(state), remote.updated_at, userId);
+        setCloudStatus('Loaded your cloud workout data onto this device.', 'success');
+      } else {
+        const { data: written, error: writeError } = await cloudClient.from('workout_sync').upsert({ user_id: userId, payload: state, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).select('updated_at').single();
+        if (writeError) throw writeError;
+        saveSyncMeta(localSnapshot, written.updated_at, userId);
+        setCloudStatus('Saved this device’s workout data to the cloud.', 'success');
+      }
+      return;
+    }
+
+    const cloudChanged = remote.updated_at !== matchingMeta.cloudUpdatedAt;
+    if (samePayload(state, remote.payload)) {
+      saveSyncMeta(localSnapshot, remote.updated_at, userId);
+      setCloudStatus('This device and cloud copy already match.', 'success');
+      return;
+    }
+    if (localChanged && cloudChanged) {
+      const keepCloud = window.confirm('This device and cloud copy both changed since the last sync. Press OK to replace this device with the cloud copy. Press Cancel to keep this device and replace the cloud copy.');
+      if (keepCloud) {
+        state = remote.payload;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        render();
+        saveSyncMeta(JSON.stringify(state), remote.updated_at, userId);
+        setCloudStatus('Loaded your cloud workout data onto this device.', 'success');
+      } else {
+        const { data: written, error: writeError } = await cloudClient.from('workout_sync').upsert({ user_id: userId, payload: state, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).select('updated_at').single();
+        if (writeError) throw writeError;
+        saveSyncMeta(localSnapshot, written.updated_at, userId);
+        setCloudStatus('Saved this device’s workout data to the cloud.', 'success');
+      }
+    } else if (cloudChanged) {
+      state = remote.payload;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      render();
+      saveSyncMeta(JSON.stringify(state), remote.updated_at, userId);
+      setCloudStatus('Loaded your latest cloud workout data onto this device.', 'success');
+    } else {
+      const { data: written, error: writeError } = await cloudClient.from('workout_sync').upsert({ user_id: userId, payload: state, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).select('updated_at').single();
+      if (writeError) throw writeError;
+      saveSyncMeta(localSnapshot, written.updated_at, userId);
+      setCloudStatus('Saved this device’s latest workout data to the cloud.', 'success');
+    }
+  } catch (error) {
+    setCloudStatus(error.message || 'Sync failed. Your local data is still available.', 'error');
+  } finally {
+    cloudBusy = false;
+    refreshCloudUI();
+  }
+}
+
+$('#cloudButton').addEventListener('click', () => $('#cloudDialog').showModal());
+$('#saveCloudConfigButton').addEventListener('click', async () => {
+  const url = $('#cloudUrl').value.trim().replace(/\/$/, '');
+  const key = $('#cloudPublishableKey').value.trim();
+  if (!url || !key) { setCloudStatus('Enter both the Supabase project URL and publishable key.', 'error'); return; }
+  try { new URL(url); } catch { setCloudStatus('Enter a valid project URL.', 'error'); return; }
+  try {
+    localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify({ url, key }));
+    updateResumeProjectLink(url);
+    await configureCloud(url, key);
+  } catch (error) { setCloudStatus(error.message || 'Could not connect to the Supabase project.', 'error'); }
+});
+$('#sendCloudLinkButton').addEventListener('click', async () => {
+  if (!cloudClient) { setCloudStatus('Save your Supabase project connection first.', 'error'); return; }
+  const email = $('#cloudEmail').value.trim();
+  if (!email) { setCloudStatus('Enter your email address first.', 'error'); return; }
+  const { error } = await cloudClient.auth.signInWithOtp({ email, options: { emailRedirectTo: `${location.origin}${location.pathname}` } });
+  if (error) setCloudStatus(error.message, 'error');
+  else setCloudStatus('Sign-in link sent. Open it on this device with this app installed.', 'success');
+});
+$('#cloudSignOutButton').addEventListener('click', async () => {
+  const { error } = await cloudClient.auth.signOut();
+  setCloudStatus(error ? error.message : 'Signed out. Your local workout data remains on this device.', error ? 'error' : 'success');
+});
+$('#syncCloudButton').addEventListener('click', syncCloudData);
+initializeCloud();

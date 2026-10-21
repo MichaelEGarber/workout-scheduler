@@ -17,7 +17,10 @@
         <span class="brand-mark" aria-hidden="true">↗</span>
         <span>stride<span class="brand-dot">.</span></span>
       </a>
-      <button class="icon-button" id="backupButton" aria-label="Backup and restore" title="Backup and restore">↥</button>
+      <div class="header-actions">
+        <button class="icon-button" id="cloudButton" aria-label="Cloud sync" title="Cloud sync">☁</button>
+        <button class="icon-button" id="backupButton" aria-label="Backup and restore" title="Backup and restore">↥</button>
+      </div>
     </header>
 
     <main id="top">
@@ -66,7 +69,7 @@
         <p>Your workout log is saved in this browser on this iPhone. Use <strong>Backup</strong> to export a copy.</p>
       </section>
     </main>
-    <footer>Made for your own miles, minutes, and milestones.</footer>
+    <footer class="app-footer"><span>Made for your own miles, minutes, and milestones.</span><a class="button secondary resume-project-button" id="resumeProjectButton" href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" title="Opens your project dashboard in a new tab. It does not sign you in." hidden>Open Supabase project to resume</a></footer>
   </div>
 
   <dialog id="logDialog" class="modal">
@@ -110,7 +113,29 @@
     </form>
   </dialog>
 
+  <dialog id="cloudDialog" class="modal">
+    <form method="dialog" class="modal-card cloud-card">
+      <button class="close-button" value="cancel" aria-label="Close">×</button>
+      <p class="eyebrow">PRIVATE CLOUD SYNC</p>
+      <h2>Sync your workout data</h2>
+      <p class="section-copy">Set up your free Supabase project once, then use the same project and email on each device. Cloud sync is private to your signed-in account.</p>
+      <div id="cloudStatus" class="cloud-status" role="status" aria-live="polite">Enter your project details to connect.</div>
+      <label>Supabase project URL<input id="cloudUrl" type="url" autocomplete="url" placeholder="https://your-project.supabase.co"></label>
+      <label>Publishable key<input id="cloudPublishableKey" type="text" autocomplete="off" spellcheck="false" placeholder="sb_publishable_…"></label>
+      <p class="fine-print">Use only the publishable key (or legacy anon key). Never enter a secret or service-role key here.</p>
+      <button class="button secondary full-button" type="button" id="saveCloudConfigButton">Save connection</button>
+      <div id="cloudAuthSection" hidden>
+        <label>Email for sign-in link<input id="cloudEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>
+        <button class="button secondary full-button" type="button" id="sendCloudLinkButton">Email me a sign-in link</button>
+        <div class="cloud-account-row"><span id="cloudAccountLabel"></span><button class="quiet-button" type="button" id="cloudSignOutButton">Sign out</button></div>
+        <button class="button primary full-button" type="button" id="syncCloudButton" disabled>Sync now</button>
+      </div>
+      <p class="fine-print">Sync checks for changes on both sides. If both this device and the cloud changed, it asks which copy to keep.</p>
+    </form>
+  </dialog>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./app.js" defer></script>
 </body>
 </html>

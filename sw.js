@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stride-shell-v5';
+const CACHE_NAME = 'stride-shell-v6';
 const APP_SHELL = ['./', './index.html', './styles.css', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -26,4 +26,5 @@ self.addEventListener('fetch', (event) => {
     throw new Error('This page is unavailable offline.');
   }));
 });
+
 
